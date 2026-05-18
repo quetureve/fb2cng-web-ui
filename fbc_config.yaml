@@ -1,0 +1,45 @@
+version: 1
+
+document:
+  output_name_template: |
+    {{- $all := "" -}}
+    {{- if gt (len .Authors) 0 -}}
+    {{-   with first .Authors -}}
+    {{-     $all = .LastName -}}
+    {{-     if .FirstName }}{{ $all = (cat $all " " .FirstName) }}{{- end -}}
+    {{-   end -}}
+    {{-   $all = cat $all " - " -}}
+    {{- end -}}
+    {{- cat $all .Title -}}
+
+  metainformation:
+    title_template: |
+      {{- if gt (len .Series) 0 -}}
+      {{-   with first .Series -}}
+      {{-     "(" }}{{ .Name }}{{ " - " }}{{ printf "%02d" .Number }}{{ ") " }}
+      {{-   end -}}
+      {{- end -}}
+      {{ .Title }}
+    creator_name_template: "{{.LastName}}, {{.FirstName}} {{.MiddleName}}"
+
+  images:
+    optimize: true
+    jpeg_quality_level: 80
+    screen:
+      width: 1264
+      height: 1680
+    cover:
+      generate: true
+      resize: keepAR
+
+  footnotes:
+    mode: float
+
+  dropcaps:
+    enable: true
+
+  insert_soft_hyphen: false   # отключаем, т.к. современные ридеры сами умеют
+
+logging:
+  console:
+    level: normal
