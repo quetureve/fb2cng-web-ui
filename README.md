@@ -2,6 +2,7 @@
 
 > Веб-интерфейс для конвертации книг FB2 в EPUB2, EPUB3, KEPUB, KFX и AZW8 с использованием [fb2cng](https://github.com/rupor-github/fb2cng).  
 > Поддерживает загрузку ZIP-архивов, отправку результатов по email и загрузку собственного конфига fb2cng.
+<img width="873" height="472" alt="image" src="https://github.com/user-attachments/assets/23be4ec4-f73a-4042-92a7-f0a45ea916f1" />
 
 ---
 
