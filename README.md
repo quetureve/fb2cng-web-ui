@@ -21,6 +21,15 @@
 
 ## 🚀 Быстрый старт
 
+Проект можно запустить двумя способами:
+
+- Локальная сборка из исходников
+- Использование готового Docker-образа из Docker Hub
+
+---
+
+# 🛠 Вариант 1 — локальная сборка
+
 ### 1. Клонируйте репозиторий
 
 ```bash
@@ -32,6 +41,64 @@ cd fb2cng-web-ui
 
 ```bash
 docker compose up -d --build
+```
+
+### 3. Откройте браузер
+
+```text
+http://localhost:5000
+```
+
+---
+
+# 🐳 Вариант 2 — запуск через готовый Docker-образ
+
+Docker Hub:  
+https://hub.docker.com/r/quetureve/fb2cng-web-ui
+
+### 1. Создайте файл `docker-compose.yaml`
+
+```yaml
+services:
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    command: redis-server --appendonly no
+    volumes:
+      - redis_data:/data
+
+  web:
+    image: quetureve/fb2cng-web-ui:latest
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/app/data
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    command: gunicorn --bind 0.0.0.0:5000 --workers 2 --threads 4 app:app
+
+  worker:
+    image: quetureve/fb2cng-web-ui:latest
+    restart: unless-stopped
+    volumes:
+      - ./data:/app/data
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      - redis
+    command: celery -A tasks worker --loglevel=info --concurrency=2
+
+volumes:
+  redis_data:
+```
+
+### 2. Запустите контейнеры
+
+```bash
+docker compose up -d
 ```
 
 ### 3. Откройте браузер
