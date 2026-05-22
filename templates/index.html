@@ -15,6 +15,9 @@
         .progress { height: 0.5rem; }
         .tab-content { padding-top: 1.5rem; }
         .list-group-item { word-break: break-all; }
+        pre { background: #1e1e1e; color: #d4d4d4; padding: 1rem; border-radius: 0.5rem; overflow-x: auto; font-size: 0.8rem; max-height: 400px; overflow-y: auto; }
+        .accordion-button:not(.collapsed) { background-color: #e7f1ff; }
+        .nav-tabs { justify-content: center !important; }
     </style>
 </head>
 <body>
@@ -25,66 +28,175 @@
                 <div class="card-header bg-white border-bottom-0 pt-4 pb-0">
                     <ul class="nav nav-tabs card-header-tabs">
                         <li class="nav-item"><button class="nav-link active" data-bs-toggle="tab" data-bs-target="#convert">📖 Конвертация</button></li>
-                        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#fbcConfig">⚙️ Конфиг fb2cng</button></li>
-                        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#smtp">📧 SMTP настройки</button></li>
+                        <li class="nav-item"><button class="nav-link" data-bs-toggle="tab" data-bs-target="#settings">⚙️ Настройки</button></li>
                     </ul>
                 </div>
                 <div class="card-body tab-content">
+                    <!-- Вкладка Конвертация -->
                     <div class="tab-pane fade show active" id="convert">
                         <div class="drop-zone p-4 text-center mb-3" id="dropZone">
                             <i class="bi bi-cloud-upload fs-1 text-secondary"></i>
-                            <p class="mt-2 mb-0">Перетащите FB2 или ZIP файл сюда или <strong>нажмите для выбора</strong></p>
+                            <p class="mt-2 mb-0">Перетащите FB2 или ZIP или <strong>нажмите для выбора</strong></p>
                             <input type="file" id="fileInput" accept=".fb2,.zip" style="display:none">
                         </div>
                         <div class="mb-3">
-                            <label class="form-label">Выходной формат</label>
+                            <label class="form-label">Формат</label>
                             <select id="formatSelect" class="form-select">
-                                <option value="epub2">EPUB2 (широкая совместимость)</option>
-                                <option value="epub3">EPUB3 (современные функции)</option>
-                                <option value="kepub">KEPUB (Kobo)</option>
-                                <option value="kfx">KFX (Kindle)</option>
-                                <option value="azw8">AZW8 (Kindle)</option>
+                                <option value="epub2">EPUB2</option>
+                                <option value="epub3">EPUB3</option>
+                                <option value="kepub">KEPUB</option>
+                                <option value="kfx">KFX</option>
+                                <option value="azw8">AZW8</option>
                             </select>
                         </div>
                         <div class="form-check mb-2">
-                            <input class="form-check-input" type="checkbox" id="autoSendEmailCheckbox">
-                            <label class="form-check-label">Автоматически отправлять результат на email (адрес из настроек SMTP)</label>
+                            <input class="form-check-input" type="checkbox" id="sendEmailCheck">
+                            <label>Отправить на email (адрес из SMTP)</label>
                         </div>
-                        <button id="uploadBtn" class="btn btn-primary w-100 mt-3" disabled>Конвертировать</button>
+                        <button id="uploadBtn" class="btn btn-primary w-100" disabled>Конвертировать</button>
                         <div class="mt-4">
                             <div id="progressContainer" style="display:none;">
-                                <div class="d-flex justify-content-between small mb-1">
-                                    <span>Статус</span>
-                                    <span id="statusText">Загрузка...</span>
-                                </div>
-                                <div class="progress">
-                                    <div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:0%"></div>
-                                </div>
+                                <div class="d-flex justify-content-between small mb-1"><span>Статус</span><span id="statusText">Загрузка...</span></div>
+                                <div class="progress"><div id="progressBar" class="progress-bar progress-bar-striped progress-bar-animated" style="width:0%"></div></div>
                             </div>
                             <div id="resultPanel" class="mt-3"></div>
                         </div>
                     </div>
-                    <div class="tab-pane fade" id="fbcConfig">
-                        <div class="alert alert-info">Загрузите YAML файл с настройками fb2cng. <a href="#" id="downloadDefaultConfigLink">Скачать пример конфига</a></div>
-                        <div class="input-group mb-3">
-                            <input type="file" class="form-control" id="fbcConfigFile" accept=".yaml,.yml">
-                            <button class="btn btn-outline-primary" id="uploadFbcConfigBtn">Загрузить</button>
+
+                    <!-- Вкладка Настройки -->
+                    <div class="tab-pane fade" id="settings">
+                        <div class="accordion" id="settingsAccordion">
+                            <!-- Конфиги и ресурсы -->
+                            <div class="accordion-item">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseConfig">
+                                        <i class="bi bi-filetype-yml me-2"></i> Конфиги и ресурсы
+                                    </button>
+                                </h2>
+                                <div id="collapseConfig" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
+                                    <div class="accordion-body">
+                                        <div class="alert alert-info small">
+                                            Загрузите YAML-конфиги, CSS-файлы, изображения (обложки, шрифты).<br>
+                                            Загруженный YAML автоматически становится активным конфигом.<br>
+                                            📖 <a href="https://github.com/rupor-github/fb2cng/blob/master/docs/guide.md" target="_blank">Документация fb2cng</a>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label">Загрузить файлы (YAML, CSS, изображения)</label>
+                                            <div class="input-group">
+                                                <input type="file" id="uploadResourcesInput" multiple class="form-control">
+                                                <button id="uploadResourcesBtn" class="btn btn-outline-primary">Загрузить</button>
+                                            </div>
+                                        </div>
+                                        <div class="mb-3">
+                                            <label class="form-label">Загруженные конфиги</label>
+                                            <div id="configsList">
+                                                {% for cfg in configs %}
+                                                <div class="d-flex justify-content-between align-items-center mb-1">
+                                                    <span>{% if cfg == active_config %}✅ {% endif %}{{ cfg }}</span>
+                                                    <div>
+                                                        {% if cfg != active_config %}
+                                                        <button class="btn btn-sm btn-outline-primary set-active-config" data-filename="{{ cfg }}">Активным</button>
+                                                        {% endif %}
+                                                        <button class="btn btn-sm btn-outline-danger delete-config" data-filename="{{ cfg }}">Удалить</button>
+                                                    </div>
+                                                </div>
+                                                {% else %}
+                                                <div class="text-muted">Нет конфигов</div>
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+                                        <button id="downloadExampleConfig" class="btn btn-sm btn-secondary">📄 Скачать пример конфига</button>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- SMTP -->
+                            <div class="accordion-item">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseSmtp">
+                                        <i class="bi bi-envelope me-2"></i> SMTP настройки
+                                    </button>
+                                </h2>
+                                <div id="collapseSmtp" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
+                                    <div class="accordion-body">
+                                        <form id="smtpForm">
+                                            <div class="mb-2"><label>SMTP сервер</label><input id="smtpServer" class="form-control" value="{{ smtp.server or '' }}"></div>
+                                            <div class="mb-2"><label>Порт</label><input id="smtpPort" class="form-control" value="{{ smtp.port or '587' }}"></div>
+                                            <div class="mb-2"><label>Имя пользователя</label><input id="smtpUsername" class="form-control" value="{{ smtp.username or '' }}"></div>
+                                            <div class="mb-2"><label>Пароль</label><input type="password" id="smtpPassword" class="form-control" value="{{ smtp.password or '' }}"></div>
+                                            <div class="mb-2"><label>Email отправителя</label><input id="smtpSender" class="form-control" value="{{ smtp.sender or '' }}"></div>
+                                            <div class="mb-2"><label>Email получателя</label><input id="smtpRecipient" class="form-control" value="{{ smtp.recipient_email or '' }}"></div>
+                                            <div class="form-check mb-3"><input type="checkbox" id="smtpTls" {% if smtp.use_tls != false %}checked{% endif %}> <label>Использовать TLS</label></div>
+                                            <button type="submit" class="btn btn-success">Сохранить SMTP</button>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Автообработка -->
+                            <div class="accordion-item">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseAuto">
+                                        <i class="bi bi-arrow-repeat me-2"></i> Автообработка папки
+                                    </button>
+                                </h2>
+                                <div id="collapseAuto" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
+                                    <div class="accordion-body">
+                                        <div class="alert alert-info small">
+                                            Сервер сканирует папку <code>data/auto_in</code>. Новые FB2/ZIP обрабатываются автоматически.<br>
+                                            Результаты → <code>data/auto_results</code>, исходники → <code>data/auto_processed</code>.
+                                        </div>
+                                        <form id="scanForm">
+                                            <div class="mb-2">
+                                                <label>Формат конвертации</label>
+                                                <select id="scanFormat" class="form-select">
+                                                    <option value="epub2" {% if scan_cfg.format == 'epub2' %}selected{% endif %}>EPUB2</option>
+                                                    <option value="epub3" {% if scan_cfg.format == 'epub3' %}selected{% endif %}>EPUB3</option>
+                                                    <option value="kepub" {% if scan_cfg.format == 'kepub' %}selected{% endif %}>KEPUB</option>
+                                                    <option value="kfx" {% if scan_cfg.format == 'kfx' %}selected{% endif %}>KFX</option>
+                                                    <option value="azw8" {% if scan_cfg.format == 'azw8' %}selected{% endif %}>AZW8</option>
+                                                </select>
+                                            </div>
+                                            <div class="form-check mb-2">
+                                                <input type="checkbox" id="scanSendEmail" {% if scan_cfg.send_email %}checked{% endif %}>
+                                                <label>Отправлять результат на email</label>
+                                            </div>
+                                            <div class="mb-2">
+                                                <label>Интервал сканирования (сек)</label>
+                                                <input id="scanInterval" type="number" class="form-control" value="{{ scan_cfg.interval or 5 }}">
+                                            </div>
+                                            <div class="form-check mb-3">
+                                                <input type="checkbox" id="scanEnabled" {% if scan_running %}checked{% endif %}>
+                                                <label>Включить автообработку</label>
+                                            </div>
+                                            <button type="submit" class="btn btn-primary">Сохранить настройки</button>
+                                        </form>
+                                        <div id="scanStatusMsg" class="mt-2"></div>
+                                    </div>
+                                </div>
+                            </div>
+                            <!-- Логи -->
+                            <div class="accordion-item">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseLogs">
+                                        <i class="bi bi-file-text me-2"></i> Логи
+                                    </button>
+                                </h2>
+                                <div id="collapseLogs" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
+                                    <div class="accordion-body">
+                                        <div class="d-flex justify-content-between align-items-center mb-2">
+                                            <span>Логи конвертации (web + auto)</span>
+                                            <div>
+                                                <button id="copyLogsBtn" class="btn btn-sm btn-outline-secondary me-1"><i class="bi bi-clipboard"></i> Копировать</button>
+                                                <button id="clearLogsBtn" class="btn btn-sm btn-outline-danger"><i class="bi bi-trash"></i> Очистить</button>
+                                            </div>
+                                        </div>
+                                        <pre id="logContent">Загрузка...</pre>
+                                        <div class="mt-2 text-end">
+                                            <button id="refreshLogsBtn" class="btn btn-sm btn-outline-secondary">Обновить</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
-                        <button class="btn btn-outline-danger btn-sm" id="deleteFbcConfigBtn">Удалить текущий конфиг</button>
-                        <div class="mt-3 small text-muted"><strong>Текущий статус:</strong> <span id="fbcConfigStatusText">{% if has_fbc_config %}✅ Конфиг загружен{% else %}❌ Используются стандартные настройки{% endif %}</span></div>
-                    </div>
-                    <div class="tab-pane fade" id="smtp">
-                        <div class="alert alert-info">Настройки почтового сервера. Email получателя обязателен для автоотправки.</div>
-                        <form id="smtpForm">
-                            <div class="mb-2"><label>SMTP сервер</label><input type="text" class="form-control" id="smtpServer" value="{{ smtp.server or '' }}" placeholder="smtp.gmail.com"></div>
-                            <div class="mb-2"><label>Порт</label><input type="number" class="form-control" id="smtpPort" value="{{ smtp.port or '587' }}"></div>
-                            <div class="mb-2"><label>Имя пользователя</label><input type="text" class="form-control" id="smtpUsername" value="{{ smtp.username or '' }}"></div>
-                            <div class="mb-2"><label>Пароль</label><input type="password" class="form-control" id="smtpPassword" value="{{ smtp.password or '' }}"></div>
-                            <div class="mb-2"><label>Email отправителя</label><input type="email" class="form-control" id="smtpSender" value="{{ smtp.sender or '' }}"></div>
-                            <div class="mb-2"><label>Email получателя (для автоотправки)</label><input type="email" class="form-control" id="smtpRecipient" value="{{ smtp.recipient_email or '' }}"></div>
-                            <div class="form-check mb-3"><input class="form-check-input" type="checkbox" id="smtpTls" {% if smtp.use_tls != false %}checked{% endif %}> <label class="form-check-label">Использовать TLS</label></div>
-                            <button type="submit" class="btn btn-success">Сохранить SMTP</button>
-                        </form>
                     </div>
                 </div>
             </div>
@@ -96,45 +208,41 @@
 {% raw %}
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+    // --- Конвертация ---
     let selectedFile = null, currentTaskId = null, statusInterval = null;
     const dropZone = document.getElementById('dropZone'), fileInput = document.getElementById('fileInput'), uploadBtn = document.getElementById('uploadBtn');
-    const formatSelect = document.getElementById('formatSelect'), autoSendCheck = document.getElementById('autoSendEmailCheckbox');
     const resultPanel = document.getElementById('resultPanel'), progressContainer = document.getElementById('progressContainer');
     const statusTextSpan = document.getElementById('statusText'), progressBar = document.getElementById('progressBar');
+    const formatSelect = document.getElementById('formatSelect'), sendEmailCheck = document.getElementById('sendEmailCheck');
 
-    if (localStorage.getItem('auto_send_email') === 'true') autoSendCheck.checked = true;
-    autoSendCheck.addEventListener('change', () => localStorage.setItem('auto_send_email', autoSendCheck.checked));
-
-    dropZone.addEventListener('click', () => fileInput.click());
-    dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
-    dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
-    dropZone.addEventListener('drop', e => {
+    dropZone.onclick = () => fileInput.click();
+    dropZone.ondragover = e => { e.preventDefault(); dropZone.classList.add('drag-over'); };
+    dropZone.ondragleave = () => dropZone.classList.remove('drag-over');
+    dropZone.ondrop = e => {
         e.preventDefault(); dropZone.classList.remove('drag-over');
         const f = e.dataTransfer.files[0];
         if (f && (f.name.endsWith('.fb2') || f.name.endsWith('.zip'))) { selectedFile = f; updateFileUI(f.name); }
-        else showToast('Ошибка', 'Поддерживаются только FB2 или ZIP файлы', 'danger');
-    });
-    fileInput.addEventListener('change', e => { if(e.target.files[0]){ selectedFile = e.target.files[0]; updateFileUI(selectedFile.name); } });
-    function updateFileUI(name){ document.querySelector('.drop-zone p').innerHTML = `<i class="bi bi-file-earmark-text"></i> <strong>${name}</strong><br><small>Нажмите или перетащите другой файл</small>`; uploadBtn.disabled = false; }
+        else showToast('Ошибка', 'Только FB2 или ZIP', 'danger');
+    };
+    fileInput.onchange = e => { if(e.target.files[0]){ selectedFile = e.target.files[0]; updateFileUI(selectedFile.name); } };
+    function updateFileUI(name){ document.querySelector('.drop-zone p').innerHTML = `<i class="bi bi-file-earmark-text"></i> <strong>${name}</strong><br><small>Нажмите или перетащите другой</small>`; uploadBtn.disabled = false; }
 
-    uploadBtn.addEventListener('click', async () => {
+    uploadBtn.onclick = async () => {
         if(!selectedFile) return;
         const fd = new FormData();
-        fd.append('file', selectedFile); fd.append('format', formatSelect.value); fd.append('send_email', autoSendCheck.checked);
+        fd.append('file', selectedFile);
+        fd.append('format', formatSelect.value);
+        fd.append('send_email', sendEmailCheck.checked);
         uploadBtn.disabled = true; resultPanel.innerHTML = ''; progressContainer.style.display = 'block';
-        statusTextSpan.innerText = 'Загрузка...';
-        progressBar.style.width = '10%';
-        progressBar.classList.add('progress-bar-striped', 'progress-bar-animated');
+        statusTextSpan.innerText = 'Загрузка...'; progressBar.style.width = '10%';
         try {
             const res = await fetch('/upload', { method:'POST', body:fd });
             const data = await res.json();
             if(data.error){ showToast('Ошибка', data.error, 'danger'); resetUI(); return; }
-            currentTaskId = data.task_id;
-            statusTextSpan.innerText = 'В очереди...';
-            progressBar.style.width = '30%';
+            currentTaskId = data.task_id; statusTextSpan.innerText = 'В очереди...'; progressBar.style.width = '30%';
             startPolling(currentTaskId);
         } catch(err){ showToast('Ошибка', err.message, 'danger'); resetUI(); }
-    });
+    };
 
     function startPolling(id){
         if(statusInterval) clearInterval(statusInterval);
@@ -142,9 +250,7 @@
             try{
                 const resp = await fetch(`/status/${id}`); const data = await resp.json();
                 if(data.status === 'SUCCESS'){
-                    clearInterval(statusInterval);
-                    progressBar.style.width = '100%';
-                    statusTextSpan.innerText = 'Готово!';
+                    clearInterval(statusInterval); progressBar.style.width = '100%'; statusTextSpan.innerText = 'Готово!';
                     let html = '<div class="alert alert-success">✅ Конвертация завершена!</div>';
                     if(data.download_urls && data.download_urls.length){
                         html += '<div class="list-group mt-3">';
@@ -153,50 +259,59 @@
                             html += `<a href="${url}" class="list-group-item list-group-item-action">📥 ${filename}</a>`;
                         });
                         html += '</div>';
-                    } else if(data.download_url){
-                        html += `<a href="${data.download_url}" class="btn btn-success w-100">📥 Скачать результат</a>`;
-                    } else {
-                        html += '<div class="alert alert-warning">Ссылка не найдена</div>';
-                    }
-                    if(autoSendCheck.checked){
-                        if(data.result?.email_sent) html += `<div class="mt-2 alert alert-info">📧 Письмо отправлено на email из настроек SMTP</div>`;
-                        else html += `<div class="mt-2 alert alert-danger">⚠️ Не удалось отправить письмо: ${data.result?.email_error || 'проверьте SMTP'}</div>`;
-                    }
-                    resultPanel.innerHTML = html;
-                    progressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
-                    resetUI();
+                    } else { html += '<div class="alert alert-warning">Ссылка не найдена</div>'; }
+                    resultPanel.innerHTML = html; resetUI();
                 } else if(data.status === 'FAILURE'){
-                    clearInterval(statusInterval);
-                    showToast('Ошибка конвертации', data.error || 'Неизвестная ошибка', 'danger');
-                    progressBar.classList.remove('progress-bar-striped', 'progress-bar-animated');
-                    resetUI();
-                } else if(data.status === 'PENDING'){
-                    statusTextSpan.innerText = 'В очереди...';
-                    progressBar.style.width = '30%';
-                } else if(data.status === 'STARTED'){
-                    statusTextSpan.innerText = 'Конвертация...';
-                    progressBar.style.width = '70%';
-                }
+                    clearInterval(statusInterval); showToast('Ошибка конвертации', data.error || 'Неизвестная ошибка', 'danger'); resetUI();
+                } else if(data.status === 'PENDING'){ statusTextSpan.innerText = 'В очереди...'; progressBar.style.width = '30%'; }
+                else if(data.status === 'STARTED'){ statusTextSpan.innerText = 'Конвертация...'; progressBar.style.width = '70%'; }
             } catch(e){ console.error(e); }
         }, 2000);
     }
     function resetUI(){ uploadBtn.disabled = false; setTimeout(() => { progressContainer.style.display = 'none'; progressBar.style.width = '0%'; }, 1000); }
     function showToast(title, msg, type){ const toastHtml = `<div class="toast align-items-center text-white bg-${type} border-0" role="alert"><div class="d-flex"><div class="toast-body"><strong>${title}</strong><br>${msg}</div><button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button></div></div>`;
         const container = document.querySelector('.toast-container'); const el = document.createElement('div'); el.innerHTML = toastHtml; container.appendChild(el); const toast = new bootstrap.Toast(el.firstChild, { autohide: true, delay: 5000 }); toast.show(); el.firstChild.addEventListener('hidden.bs.toast', () => el.remove()); }
-    
-    document.getElementById('uploadFbcConfigBtn').addEventListener('click', async () => {
-        const inp = document.getElementById('fbcConfigFile');
-        if(!inp.files.length){ showToast('Ошибка', 'Выберите YAML файл', 'warning'); return; }
-        const fd = new FormData(); fd.append('config', inp.files[0]);
-        const resp = await fetch('/upload_fbc_config', { method:'POST', body:fd }); const data = await resp.json();
-        if(data.status === 'ok'){ showToast('Успех', data.message, 'success'); document.getElementById('fbcConfigStatusText').innerHTML = '✅ Конфиг загружен'; }
-        else showToast('Ошибка', data.error, 'danger');
+
+    // --- Конфиги и ресурсы ---
+    document.getElementById('uploadResourcesBtn').onclick = async () => {
+        const input = document.getElementById('uploadResourcesInput');
+        if (!input.files.length) { showToast('Ошибка', 'Выберите файлы', 'warning'); return; }
+        const fd = new FormData();
+        for (let file of input.files) { fd.append('files', file); }
+        const resp = await fetch('/upload_resources', { method:'POST', body:fd });
+        const data = await resp.json();
+        if (data.status === 'ok') {
+            showToast('Успех', data.message, 'success');
+            setTimeout(() => location.reload(), 1500);
+        } else {
+            showToast('Ошибка', data.error, 'danger');
+        }
+    };
+    document.querySelectorAll('.set-active-config').forEach(btn => {
+        btn.onclick = async () => {
+            const filename = btn.dataset.filename;
+            const resp = await fetch('/set_active_config', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({filename}) });
+            const data = await resp.json();
+            if(data.status === 'ok'){ showToast('Успех', `Активный: ${filename}`, 'success'); location.reload(); }
+            else showToast('Ошибка', data.error, 'danger');
+        };
     });
-    document.getElementById('deleteFbcConfigBtn').addEventListener('click', async () => {
-        const resp = await fetch('/delete_fbc_config', { method:'POST' }); const data = await resp.json();
-        if(data.status === 'ok'){ showToast('Успех', data.message, 'success'); document.getElementById('fbcConfigStatusText').innerHTML = '❌ Используются стандартные настройки'; }
+    document.querySelectorAll('.delete-config').forEach(btn => {
+        btn.onclick = async () => {
+            if(!confirm('Удалить конфиг?')) return;
+            const filename = btn.dataset.filename;
+            const resp = await fetch('/delete_config', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({filename}) });
+            const data = await resp.json();
+            if(data.status === 'ok'){ showToast('Успех', 'Конфиг удалён', 'success'); location.reload(); }
+            else showToast('Ошибка', data.error, 'danger');
+        };
     });
-    document.getElementById('smtpForm').addEventListener('submit', async e => {
+    document.getElementById('downloadExampleConfig').onclick = () => {
+        window.location.href = '/download_example_config';
+    };
+
+    // --- SMTP ---
+    document.getElementById('smtpForm').onsubmit = async e => {
         e.preventDefault();
         const payload = {
             server: document.getElementById('smtpServer').value,
@@ -207,14 +322,83 @@
             recipient_email: document.getElementById('smtpRecipient').value,
             use_tls: document.getElementById('smtpTls').checked
         };
-        const resp = await fetch('/smtp_settings', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) }); const data = await resp.json();
-        if(data.status === 'ok') showToast('Успех', data.message, 'success'); else showToast('Ошибка', data.error, 'danger');
-    });
-    document.getElementById('downloadDefaultConfigLink').addEventListener('click', e => {
+        const resp = await fetch('/smtp_settings', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+        const data = await resp.json();
+        if(data.status === 'ok') showToast('Успех', data.message, 'success');
+        else showToast('Ошибка', data.error, 'danger');
+    };
+
+    // --- Автообработка ---
+    const scanForm = document.getElementById('scanForm');
+    const scanEnabled = document.getElementById('scanEnabled');
+    const scanStatusMsg = document.getElementById('scanStatusMsg');
+    scanForm.onsubmit = async e => {
         e.preventDefault();
-        const sample = `version: 1\ndocument:\n  output_name_template: "{{ .Title }} - {{ range .Authors }}{{ .LastName }} {{ .FirstName }}{{ end }}"\n  metainformation:\n    title_template: "{{ .Title }}"\n    creator_name_template: "{{ .LastName }} {{ .FirstName }}"\n  images:\n    optimize: true\n    jpeg_quality_level: 80\n  footnotes:\n    mode: float\n  dropcaps:\n    enable: true\n`;
-        const blob = new Blob([sample], {type:'text/yaml'}); const url = URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = 'fb2cng_config.yaml'; a.click(); URL.revokeObjectURL(url);
-    });
+        const payload = {
+            format: document.getElementById('scanFormat').value,
+            send_email: document.getElementById('scanSendEmail').checked,
+            interval: parseInt(document.getElementById('scanInterval').value),
+            enabled: scanEnabled.checked
+        };
+        const resp = await fetch('/scan_settings', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload) });
+        const data = await resp.json();
+        if(data.status === 'ok'){
+            showToast('Успех', data.message, 'success');
+            const statusResp = await fetch('/scan_status');
+            const statusData = await statusResp.json();
+            scanEnabled.checked = statusData.running;
+            scanStatusMsg.innerHTML = statusData.running ? '<span class="badge bg-success">Активно</span>' : '<span class="badge bg-secondary">Остановлено</span>';
+        } else {
+            showToast('Ошибка', data.error, 'danger');
+        }
+    };
+    async function fetchScanStatus() {
+        const resp = await fetch('/scan_status');
+        const data = await resp.json();
+        scanEnabled.checked = data.running;
+        scanStatusMsg.innerHTML = data.running ? '<span class="badge bg-success">Активно</span>' : '<span class="badge bg-secondary">Остановлено</span>';
+    }
+    fetchScanStatus();
+
+    // --- Логи (с исправленной копировкой) ---
+    async function loadLogs() {
+        try {
+            const resp = await fetch('/logs?lines=200');
+            const data = await resp.json();
+            document.getElementById('logContent').innerText = data.logs || 'Лог-файл пуст';
+        } catch(e) {
+            document.getElementById('logContent').innerText = 'Ошибка загрузки логов';
+        }
+    }
+    document.getElementById('refreshLogsBtn').onclick = loadLogs;
+    document.getElementById('copyLogsBtn').onclick = () => {
+        const logText = document.getElementById('logContent').innerText;
+        // Создаём временное текстовое поле для копирования
+        const textarea = document.createElement('textarea');
+        textarea.value = logText;
+        document.body.appendChild(textarea);
+        textarea.select();
+        try {
+            document.execCommand('copy');
+            showToast('Успех', 'Логи скопированы в буфер обмена', 'success');
+        } catch (err) {
+            showToast('Ошибка', 'Не удалось скопировать', 'danger');
+        }
+        document.body.removeChild(textarea);
+    };
+    document.getElementById('clearLogsBtn').onclick = async () => {
+        if (!confirm('Очистить файл логов?')) return;
+        const resp = await fetch('/clear_logs', { method:'POST' });
+        const data = await resp.json();
+        if (data.status === 'ok') {
+            showToast('Успех', 'Логи очищены', 'success');
+            loadLogs();
+        } else {
+            showToast('Ошибка', data.error, 'danger');
+        }
+    };
+    loadLogs();
+    setInterval(loadLogs, 10000);
 </script>
 {% endraw %}
 </body>
