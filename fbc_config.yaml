@@ -1,45 +1,360 @@
+# Content should be UTF-8!
 version: 1
-
+# NOTE: Some fields (have _template in the name) must be specified using go
+# template language: https://pkg.go.dev/text/template#pkg-overview with
+# additional functions from slim-sprig package available for processing:
+# https://go-task.github.io/slim-sprig. In all cases variable .Context (string)
+# is available and is set to field name to uniquely identify processing
+# context.
 document:
-  output_name_template: |
-    {{- $all := "" -}}
-    {{- if gt (len .Authors) 0 -}}
-    {{-   with first .Authors -}}
-    {{-     $all = .LastName -}}
-    {{-     if .FirstName }}{{ $all = (cat $all " " .FirstName) }}{{- end -}}
-    {{-   end -}}
-    {{-   $all = cat $all " - " -}}
-    {{- end -}}
-    {{- cat $all .Title -}}
+    # Some programs (CoolReader and some versions of FBReader) expect "old" zip
+    # format which does not have data descriptor. If you ever encounter
+    # unreadable epub/kepub files - turn this on
+    fix_zip: false
+    # open book from cover page, rather than from beginning of the text
+    # NOTE: ignored on Kindle devices
+    open_from_cover: false
+    # Navigation hierarchy type for device TOCs/nav maps.
+    # "normal"     - preserve section nesting
+    # "old_kindle" - restrict nesting for old Kindle/kindlegen compatibility
+    # "flat"       - make all navigation entries siblings
+    # Note: generated visible TOC pages should keep their normal/full structure.
+    toc_type: normal
+    # CSS stylesheet to use. If absent - default one will be supplied
+    # stylesheet_path: "mystyle.css"
 
-  metainformation:
-    title_template: |
-      {{- if gt (len .Series) 0 -}}
-      {{-   with first .Series -}}
-      {{-     "(" }}{{ .Name }}{{ " - " }}{{ printf "%02d" .Number }}{{ ") " }}
-      {{-   end -}}
-      {{- end -}}
-      {{ .Title }}
-    creator_name_template: "{{.LastName}}, {{.FirstName}} {{.MiddleName}}"
+    # When output_name_template is set output file name will be created using FB2
+    # metainformation
+    # List of variables available:
+    # - .Title (string) - book title as specified in fb2 metainformation
+    # - .Series (array of { .Name (string), .Number (integer) }) - series as
+    # specified in fb2 metainformation.
+    #     NOTE: according to fictionbook schema series could be hierarchical (series
+    #     contain series and so on). Hierarchy is completely ignored - anything below
+    #     first level is not present here.
+    # - .Language (string) - canonical string representation of a language as
+    # specified in fb2 metainformation
+    # - .Date (string) - date as specified in fb2 metainformation.
+    #     NOTE: If valid xs:date "value" attribute is provided - it will be used,
+    #     otherwise just text as defined
+    # - .Authors (array of { .FirstName (string), .MiddleName (string), .LastName
+    # (string)}) as specified in fb2 metainformation
+    # - .Format (string) - string representing requested conversion (ex: epub2,
+    # epub3, kepub...)
+    # - .SourceFile (string) - base part of the source file name (no path, no
+    # extension)
+    # - .BookID (string) - book UUID as specified by fb2 metainformation or
+    # assigned by converter
+    # - .Genres (array of strings) - genres names as specified by fb2
+    # metainformation
+    # NOTE: watch out for path separators, directories will be created!
+    output_name_template: |
+        {{- $all := "" -}}
+        {{- if gt (len .Authors) 0 -}}
+        {{-   with first .Authors -}}
+        {{-     $all = .LastName -}}
+        {{-     if .FirstName }}{{ $all = (cat $all .FirstName) }}{{- end -}}
+        {{-     if .MiddleName }}{{ $all = (cat $all .MiddleName) }}{{- end -}}
+        {{-   end -}}
+        {{-   if gt (len .Authors) 1 -}}
+        {{-     if eq .Language "ru" }}{{ $all = (cat $all "и др") }}{{- else -}}{{ $all = (printf "%s%s" $all ", et al") }}{{- end -}}
+        {{-   end -}}
+        {{-   $all = cat $all "-" -}}
+        {{- end -}}
+        {{- if $all -}}
+        {{-   cat $all .Title -}}
+        {{- else -}}
+        {{-   .Title -}}
+        {{- end -}}
+    # Slugify/transliterate output file name - after all other processing on file
+    # name is completed
+    file_name_transliterate: false
+    # Insert soft hyphen symbols '\u00AD' inside words - for devices which do not
+    # support proper hyphenation
+    # NOTE: it may conflict with built-in hyphenation in the viewer, for example
+    # modern day Kindles always have hyphenation turned on for Russian language
+    # (and off for English)
+    insert_soft_hyphen: false
+    metainformation:
+        # NOTE: when generating OPF metainformation for epub2/kepub calibre:series
+        # tags with first collection available are used, for epub3 metainformation
+        # contains all available collections
 
-  images:
-    optimize: true
-    jpeg_quality_level: 80
-    screen:
-      width: 1264
-      height: 1680
-    cover:
-      generate: true
-      resize: keepAR
+        # When title_template is set output book title metainformation will be
+        # formatted using it. This is often used to conveniently sort device
+        # library listings.
+        # List of variables available:
+        # - .Title (string) - book title as specified in fb2 metainformation
+        # - .Series (array of { .Name (string), .Number (integer) }) - series as
+        # specified in fb2 metainformation.
+        #     NOTE: according to fictionbook schema series could be hierarchical (series
+        #     contain series and so on). Hierarchy is completely ignored - anything below
+        #     first level is not present here.
+        # - .Language (string) - canonical string representation of a language as
+        # specified in fb2 metainformation
+        # - .Date (string) - date as specified in fb2 metainformation.
+        #     NOTE: If valid xs:date "value" attribute is provided - it will be used,
+        #     otherwise just text as defined
+        # - .Authors (array of { .FirstName (string), .MiddleName (string), .LastName
+        # (string)}) as specified in fb2 metainformation
+        # - .Format (string) - string representing requested conversion (ex: epub2,
+        # epub3, kepub...)
+        # - .SourceFile (string) - base part of the source file name (no path, no
+        # extension)
+        # - .BookID (string) - book UUID as specified by fb2 metainformation or
+        # assigned by converter
+        # - .Genres (array of strings) - genres names as specified by fb2
+        # metainformation
+        title_template: |
+            {{- if gt (len .Series) 0 -}}
+            {{-   with first .Series -}}
+            {{-     $seriesLetters := list -}}
+            {{-     range $word := splitList " " .Name -}}
+            {{-       $seriesLetters = append $seriesLetters (upper (first (splitList "" $word))) -}}
+            {{-     end -}}
+            {{-     if gt (len $seriesLetters) 0 -}}
+            {{-       "(" }}{{- join "" $seriesLetters -}}
+            {{-       if gt .Number 0 -}}
+            {{-         printf " - %02d" .Number -}}
+            {{-       end -}}
+            {{-       ") " -}}
+            {{-     end -}}
+            {{-   end -}}
+            {{- end -}}
+            {{  .Title -}}
+        # When creator_name_template is set author(s) name in output book
+        # metainformation will be formatted using it. Template is applied to each
+        # available author individually. Device often uses particular format for
+        # sorting books by author names. Following fields are available:
+        # - .Index (int) - 0 based index (if there is more than 1 author)
+        # - .FirstName (string),
+        # - .MiddleName (string),
+        # - .LastName (string)
+        creator_name_template: |
+            {{- .LastName -}}
+            {{- if .FirstName }} {{.FirstName}}{{ end -}}
+            {{- if .MiddleName }} {{.MiddleName }}{{ end -}}
+        # Slugify/transliterate book title and author(s) names - after all other
+        # processing is completed
+        transliterate: false
+    page_map:
+        # Generate page map if possible
+        enable: true
+        # approximate page size in Unicode code points, min size = 500
+        size: 2300
+        # Adobe RMSDK/ADE does not have support for NCX pageList. It uses its own
+        # proprietary way - if you want it set adobe_de to true. It will cause
+        # EpubCheck to complain with ERROR(RSC-005): OEBPS/content.opf: Error while
+        # parsing file: attribute "page-map" not allowed here; expected attribute
+        # "id".
+        # NOTE: only relevant for EPUB2/KEPUB
+        adobe_de: false
+    images:
+        # Do not skip images which cannot be decoded by program. Use them without
+        # any processing, allowing reader to decide what to do
+        use_broken: false
+        # Kindle eInk devices do not handle transparent images well. This option
+        # removes transparency from PNG and GIF images by flattening to white background.
+        # NOTE: for Kindle output this behavior is applied automatically.
+        remove_transparency: false
+        # Resize all images (but cover) with specified ratio
+        scale_factor: 1.0
+        # Recompress all supported images (presently JPEG, PNG). For JPEG quality
+        # respects "jpeg_quality_level": if detected level for an image is higher
+        # than requested image will be re-encoded. For PNG best compression_level
+        # is always specified. Additionally will trigger grayscale detection for
+        # JPEG images. NOTE: for Kindle output some conversion still happens even
+        # with this disabled, because raster images are normalized to JPEG and SVG
+        # images are rasterized.
+        optimize: true
+        # JPEG quality level to use, percentage points (40% - 100%). For Kindle
+        # output this also affects PNG/GIF-to-JPEG conversion and SVG rasterization.
+        jpeg_quality_level: 95
+        screen:
+            # Reader screen size so images could be adjusted properly
+            # This is used to prepare cover and some other operations, like SVG
+            # rasterization for kindle devices
+            width: 1264
+            height: 1680
+        cover:
+            # When book does not have cover image supply one. For Amazon formats
+            # this is always enabled automatically.
+            generate: false
+            # What image to use as default cover when default one is needed. If
+            # required but not specified program will use internal resource
+            # default_image_path = "default_cover.jpeg"
 
-  footnotes:
-    mode: float
+            # How to process cover image
+            # "none"    - do nothing (for Kindle output treated as "keepAR")
+            # "keepAR"  - when image height is less than specified, resize to
+            # specified height keeping aspect ratio
+            # "stretch" - unconditionally resize to specified width and height
+            resize: stretch
+    footnotes:
+        # How to render footnotes in the book
+        # "default"         - no special processing, footnotes are just regular links
+        # "float"           - pop up footnotes (result depends on reader support).
+        # "floatRenumbered" - same as float, but footnote links and titles use
+        #                     sequential numbering controlled by label_template.
+        # NOTE: actual generated content will follow output format requirements for
+        # example with floating footnotes for epub2 and kepub "bi-directional
+        # links" method (A -> B and B -> A) and for epub3 it will be <aside> and
+        # <epub> required elements
+        mode: default
+        # Names of the bodies in fb2 document to consider for footnotes processing
+        # if required by mode specified
+        bodies: ["notes", "comments", "примечания", "комментарии"]
+        # In floating note body backlinks to original content will be represented
+        # by this string
+        backlinks: "[<]"
+        # If floating note body has more than one paragraph this string could be
+        # shown at the beginning of the first paragraph (.css footnote-more
+        # controls visibility)
+        more_paragraphs: "(~) "
+        # If floatRenumbered is specified this template will be used to format text
+        # displayed in footnotes references. Following fields are available:
+        # - .BodyTitle (string) - can be empty
+        # - .BodyNumber (int) - 1 based index
+        # - .NoteTitle (string) - can be empty
+        # - .NoteNumber (int) - 1 based index
+        # NOTE: if there is only one body with footnotes in a book .BodyNumber will
+        # be set to 0
+        label_template: |
+            {{- if gt .BodyNumber 0 -}}
+            {{-   printf "%d" .BodyNumber -}}.
+            {{- end -}}
+            {{- printf "%d" .NoteNumber -}}
+    annotation:
+        # Create separate "chapter" with book annotation if available
+        enable: false
+        # Use provided annotation title
+        title: Annotation
+        # Show annotation in TOC (generated page, ncx, nav, ...)
+        in_toc: true
+    toc_page:
+        # Generate additional page with TOC (some devices may not support epub TOC
+        # at all)
+        # "none"   - do not generate
+        # "before" - at the beginning of the book
+        # "after"  - at the end of the book
+        placement: none
+        # when toc page generation requested and authors_template is set - page
+        # will have title (header) with authors formatted using it
+        # List of variables available:
+        # - .Title (string) - book title as specified in fb2 metainformation
+        # - .Series (array of { .Name (string), .Number (integer) }) - series as
+        # specified in fb2 metainformation.
+        #     NOTE: according to fictionbook schema series could be hierarchical (series
+        #     contain series and so on). Hierarchy is completely ignored - anything below
+        #     first level is dropped.
+        #     NOTE: Similarly I am not aware of any usage of multiple series, for
+        #     example Calibre only supports one. So on some occasions internally
+        #     converter only uses first series available.
+        # - .Language (string) - canonical string representation of a language as
+        # specified in fb2 metainformation
+        # - .Date (string) - date as specified in fb2 metainformation.
+        #     NOTE: If valid xs:date "value" attribute is provided - it will be used,
+        #     otherwise just text as defined
+        # - .Authors (array of { .FirstName (string), .MiddleName (string), .LastName
+        # (string)}) as specified in fb2 metainformation
+        # - .Format (string) - string representing requested conversion (ex: epub2,
+        # epub3, kepub...)
+        # - .SourceFile (string) - base part of the source file name (no path, no
+        # extension)
+        # - .BookID (string) - book UUID as specified by fb2 metainformation or
+        # assigned by converter
+        # - .Genres (array of strings) - genres names as specified by fb2
+        # metainformation
+        authors_template: |
+            {{- $names := list -}}
+            {{- range .Authors -}}
+            {{-   $name := list -}}
+            {{-   if .FirstName -}}{{ $name = append $name .FirstName -}}{{- end -}}
+            {{-   if .MiddleName -}}{{ $name = append $name .MiddleName -}}{{- end -}}
+            {{-   if .LastName -}}{{ $name = append $name .LastName }}{{- end -}}
+            {{-   $names = append $names (join " " $name) -}}
+            {{- end -}}
+            {{- join ", " $names -}}
+        # Include chapter without title to TOC - this prevents empty TOC on "bad"
+        # books adding chapters without titles to the TOC
+        include_chapters_without_title: false
+    # Vignette images could be specified for book title (body title), chapter
+    # title and end of chapter (first level sections in the body) and for the
+    # nested sections titles and ends (nested sections inside chapters). Each
+    # item could be absent (disabled), set to "builtin" (converter will use
+    # default images) or have file path pointing to existing valid image file
+    # NOTE: subtitles are not supported for automatic vignetting
+    # vignettes:
+    #   book:
+    #     title_top: builtin
+    #     title_bottom: builtin
+    #   chapter:
+    #     title_top: builtin
+    #     title_bottom: builtin
+    #     end: builtin
+    #   section:
+    #     title_top: builtin
+    #     title_bottom: builtin
+    #     end: builtin
+    dropcaps:
+        # Allow automatic dropcap styling
+        enable: false
+        # Characters to ignore when styling dropcaps
+        ignore_symbols: "'\"-.…0123456789‒–—«»“”<>"
+    text_transformations:
+        # Could be used to fix some common issues with old FB2 files during
+        # conversion automatically. Applied only to regular body paragraphs (not in
+        # titles, poems, cites, etc). This mostly legacy staff and ideally should
+        # not be necessary
+        # NOTE: Order of operations is hardcoded: speech -> dashes -> dialogue and
+        # presently can not be changed
 
-  dropcaps:
-    enable: true
-
-  insert_soft_hyphen: false   # отключаем, т.к. современные ридеры сами умеют
-
+        # At the beginning of paragraph text starting with Unicode symbol included
+        # in "from" string possibly followed by any number of Unicode space symbols
+        # is replaced with "to" string
+        speech:
+            enable: false
+            from: "‐‑−–—―"
+            to: "— "
+        # Any Unicode symbol included in "from" string, surrounded by Unicode
+        # spaces is replaced with first Unicode symbol from "to" string.
+        dashes:
+            enable: false
+            from: "‐‑−–—―"
+            to: "—"
+        # Sequence of leading Unicode spaces followed by any Unicode symbol
+        # included in "from" string is replaced with "to" string followed by this
+        # Unicode symbol.
+        dialogue:
+            enable: false
+            from: "‐‑−–—―"
+            to: " "
 logging:
-  console:
-    level: normal
+    # controls terminal (stdout, stderr) output
+    console:
+        # logging level
+        # "none"   - suppress all console logging
+        # "normal" - messages INFO level and higher are outputted
+        # "debug"  - all log messages are outputted
+        level: normal
+    #---- controls logging to a file (could duplicate CONSOLE messages)
+    file:
+        # path to the log file, could be relative to current working directory
+        destination: fb2cng.log
+        # logging level
+        # "none"   - suppress file logging
+        # "normal" - messages INFO level and higher are printed
+        # "debug"  - all log output is printed
+        level: debug
+        # how to handle output file during consecutive program runs
+        # "append"    - keep all old log messages, append new ones at the end
+        # "overwrite" - keep only messages from the last run, log is overwritten
+        #mode: append
+        mode: overwrite
+# when program runs with "debug" option report file is produced at the
+# specified destination it contains full debug log and other artifacts to help
+# with troubleshooting
+reporting:
+    # could be relative to current working directory.
+    destination: fb2cng-report.zip
+    # vim: set filetype=yaml:
