@@ -6,6 +6,7 @@ import yaml
 import zipfile
 import tempfile
 import shutil
+import time
 import logging
 from email.message import EmailMessage
 from pathlib import Path
@@ -26,16 +27,14 @@ FBC_CMD = os.getenv('FBC_PATH', 'fbc')
 for folder in [UPLOAD_FOLDER, RESULT_FOLDER, CONFIG_FOLDER, BASE_DIR / 'logs']:
     folder.mkdir(parents=True, exist_ok=True)
 
-# Обеспечиваем существование файла логов с правильными правами
+# Настройка логирования: пишем и в файл, и в консоль
 if not LOG_FILE.exists():
     LOG_FILE.touch()
     LOG_FILE.chmod(0o666)
 
-# Очищаем предыдущие обработчики
 for handler in logging.root.handlers[:]:
     logging.root.removeHandler(handler)
 
-# Настраиваем логирование: в файл и в консоль
 file_handler = logging.FileHandler(LOG_FILE, encoding='utf-8')
 file_handler.setLevel(logging.INFO)
 stream_handler = logging.StreamHandler()
@@ -65,7 +64,7 @@ def normalize_filename(filename):
         name = "converted"
     return f"{name}{ext}"
 
-def send_email_via_smtp(recipient, subject, body, attachment_paths, timeout=120):
+def send_email_via_smtp(recipient, subject, body, attachment_paths, timeout=90, retries=2):
     cfg = load_smtp_config()
     if not cfg.get('server'):
         raise RuntimeError("SMTP не настроен.")
@@ -79,11 +78,25 @@ def send_email_via_smtp(recipient, subject, body, attachment_paths, timeout=120)
     for attach_path in attachment_paths:
         with open(attach_path, 'rb') as f:
             msg.add_attachment(f.read(), maintype='application', subtype='octet-stream', filename=Path(attach_path).name)
-    with smtplib.SMTP(cfg['server'], cfg['port'], timeout=timeout) as server:
-        if cfg.get('use_tls', True):
-            server.starttls()
-        server.login(cfg['username'], cfg['password'])
-        server.send_message(msg)
+
+    for attempt in range(retries):
+        try:
+            logger.info(f"Отправка email на {recipient}, попытка {attempt+1}")
+            with smtplib.SMTP(cfg['server'], cfg['port'], timeout=timeout) as server:
+                if cfg.get('use_tls', True):
+                    server.starttls()
+                server.login(cfg['username'], cfg['password'])
+                server.send_message(msg)
+            logger.info("Email успешно отправлен")
+            return
+        except (smtplib.SMTPServerDisconnected, TimeoutError, ConnectionError) as e:
+            logger.warning(f"Ошибка отправки (попытка {attempt+1}): {e}")
+            if attempt == retries - 1:
+                raise
+            time.sleep(2)
+        except Exception as e:
+            logger.exception("Неожиданная ошибка при отправке email")
+            raise
 
 def fix_config_paths(config_path):
     if not config_path or not Path(config_path).exists():
