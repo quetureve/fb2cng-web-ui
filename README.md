@@ -88,7 +88,6 @@ services:
       - REDIS_URL=redis://redis:6379/0
     depends_on:
       - redis
-    command: gunicorn --bind 0.0.0.0:5000 --workers 2 --threads 4 app:app
 
   worker:
     image: quetureve/fb2cng-web-ui:latest
