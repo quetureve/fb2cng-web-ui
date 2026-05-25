@@ -86,6 +86,7 @@ services:
       - ./data:/app/data
     environment:
       - REDIS_URL=redis://redis:6379/0
+      - FBC_PATH=/app/data/fbc/fbc
     depends_on:
       - redis
 
@@ -96,6 +97,7 @@ services:
       - ./data:/app/data
     environment:
       - REDIS_URL=redis://redis:6379/0
+      - FBC_PATH=/app/data/fbc/fbc
     depends_on:
       - redis
     command: celery -A tasks worker --loglevel=info --concurrency=2
