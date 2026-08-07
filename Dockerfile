@@ -14,7 +14,7 @@ RUN case ${TARGETARCH} in \
     esac && \
     echo "Building for architecture: ${ARCH}" && \
     mkdir -p /opt/fbc/bin && \
-    wget -q https://github.com/rupor-github/fb2cng/releases/download/v1.3.8/fbc-linux-${ARCH}.zip && \
+    wget -q https://github.com/rupor-github/fb2cng/releases/download/v1.5.7/fbc-linux-${ARCH}.zip && \
     unzip fbc-linux-${ARCH}.zip -d /opt/fbc/bin/ && \
     rm fbc-linux-${ARCH}.zip && \
     chmod +x /opt/fbc/bin/fbc
