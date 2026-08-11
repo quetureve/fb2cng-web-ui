@@ -191,6 +191,19 @@ def convert_single_fb2(fb2_path, output_format, fbc_config_path, output_dir):
         if is_temp_config and Path(fixed_config).exists():
             Path(fixed_config).unlink()
 
+def _resolve_output_path(output_dir, final_name, used_names, disambiguator):
+    """Путь для сохранения результата. Суффикс добавляется, только если имя
+    уже встречалось В ЭТОМ ЖЕ вызове (например, два разных fb2 в одном ZIP
+    нормализовались в одинаковое имя). Файл, оставшийся в output_dir от
+    ДРУГОЙ, более ранней конвертации, не считается коллизией и будет
+    перезаписан — так повторная конвертация той же книги просто обновляет
+    файл, а не плодит копии со случайными суффиксами."""
+    final_path = output_dir / final_name
+    if final_name in used_names:
+        final_path = output_dir / f"{final_path.stem}_{disambiguator}{final_path.suffix}"
+    used_names.add(final_name)
+    return final_path
+
 def convert_single_file(input_path, output_format, send_email, fbc_config_path=None, output_dir=None):
     input_path = Path(input_path)
     if not input_path.exists():
@@ -203,6 +216,7 @@ def convert_single_file(input_path, output_format, send_email, fbc_config_path=N
         output_dir.mkdir(parents=True, exist_ok=True)
 
     output_files = []
+    used_names = set()
     logger.info(f"Конвертация файла: {input_path.name}")
 
     if input_path.suffix.lower() == '.zip':
@@ -222,9 +236,7 @@ def convert_single_file(input_path, output_format, send_email, fbc_config_path=N
                 target_dir.mkdir(parents=True, exist_ok=True)
                 out_file = convert_single_fb2(fb2, output_format, fbc_config_path, target_dir)
                 final_name = normalize_filename(out_file.name)
-                final_path = output_dir / final_name
-                if final_path.exists():
-                    final_path = output_dir / f"{final_path.stem}_{fb2.stem[:8]}{final_path.suffix}"
+                final_path = _resolve_output_path(output_dir, final_name, used_names, fb2.stem[:8])
                 shutil.move(str(out_file), str(final_path))
                 output_files.append(str(final_path))
                 logger.info(f"Сконвертирован FB2: {fb2.name} -> {final_path.name}")
@@ -232,9 +244,7 @@ def convert_single_file(input_path, output_format, send_email, fbc_config_path=N
         with tempfile.TemporaryDirectory() as tmpdir:
             out_file = convert_single_fb2(input_path, output_format, fbc_config_path, Path(tmpdir))
             final_name = normalize_filename(out_file.name)
-            final_path = output_dir / final_name
-            if final_path.exists():
-                final_path = output_dir / f"{final_path.stem}_{input_path.stem[:8]}{final_path.suffix}"
+            final_path = _resolve_output_path(output_dir, final_name, used_names, input_path.stem[:8])
             shutil.move(str(out_file), str(final_path))
             output_files.append(str(final_path))
             logger.info(f"Сконвертирован файл: {input_path.name} -> {final_path.name}")
