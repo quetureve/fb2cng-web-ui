@@ -66,6 +66,29 @@
                     <!-- Вкладка Настройки -->
                     <div class="tab-pane fade" id="settings">
                         <div class="accordion" id="settingsAccordion">
+                            <!-- fb2cng -->
+                            <div class="accordion-item">
+                                <h2 class="accordion-header">
+                                    <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#collapseFbc">
+                                        <i class="bi bi-gear-wide-connected me-2"></i> fb2cng
+                                    </button>
+                                </h2>
+                                <div id="collapseFbc" class="accordion-collapse collapse" data-bs-parent="#settingsAccordion">
+                                    <div class="accordion-body">
+                                        <div class="alert alert-info small">
+                                            Обновление скачивает актуальный релиз с GitHub и подменяет бинарник на сервере — пересобирать образ не нужно.
+                                        </div>
+                                        <div class="mb-2">Установленная версия: <strong id="fbcInstalledVersion">{{ fbc_version or 'неизвестна' }}</strong></div>
+                                        <div id="fbcUpdateInfo" class="mb-2 small"></div>
+                                        <button id="fbcCheckBtn" class="btn btn-sm btn-outline-secondary">Проверить обновления</button>
+                                        <button id="fbcUpdateBtn" class="btn btn-sm btn-primary" style="display:none;">Обновить fb2cng</button>
+                                        <div id="fbcUpdateProgress" class="mt-2" style="display:none;">
+                                            <div class="progress"><div class="progress-bar progress-bar-striped progress-bar-animated" style="width:100%"></div></div>
+                                            <small class="text-muted">Скачивание и установка новой версии...</small>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
                             <!-- Конфиги и ресурсы -->
                             <div class="accordion-item">
                                 <h2 class="accordion-header">
@@ -359,6 +382,76 @@
         scanStatusMsg.innerHTML = data.running ? '<span class="badge bg-success">Активно</span>' : '<span class="badge bg-secondary">Остановлено</span>';
     }
     fetchScanStatus();
+
+    // --- fb2cng: проверка и обновление версии ---
+    const fbcInstalledVersion = document.getElementById('fbcInstalledVersion');
+    const fbcUpdateInfo = document.getElementById('fbcUpdateInfo');
+    const fbcCheckBtn = document.getElementById('fbcCheckBtn');
+    const fbcUpdateBtn = document.getElementById('fbcUpdateBtn');
+    const fbcUpdateProgress = document.getElementById('fbcUpdateProgress');
+    let fbcLatestVersion = null;
+
+    function resetFbcUpdateUI(){ fbcUpdateBtn.disabled = false; fbcCheckBtn.disabled = false; fbcUpdateProgress.style.display = 'none'; }
+
+    fbcCheckBtn.onclick = async () => {
+        fbcCheckBtn.disabled = true;
+        fbcUpdateInfo.innerHTML = '<span class="text-muted">Проверка...</span>';
+        try {
+            const resp = await fetch('/fbc_version');
+            const data = await resp.json();
+            if (data.error) {
+                fbcUpdateInfo.innerHTML = `<span class="text-danger">${data.error}</span>`;
+            } else if (data.update_available) {
+                fbcLatestVersion = data.latest;
+                fbcUpdateInfo.innerHTML = `<span class="text-warning">Доступна новая версия: ${data.latest}</span>`;
+                fbcUpdateBtn.style.display = 'inline-block';
+            } else {
+                fbcUpdateInfo.innerHTML = '<span class="text-success">Установлена последняя версия</span>';
+                fbcUpdateBtn.style.display = 'none';
+            }
+        } catch(e) {
+            fbcUpdateInfo.innerHTML = '<span class="text-danger">Не удалось проверить</span>';
+        }
+        fbcCheckBtn.disabled = false;
+    };
+
+    fbcUpdateBtn.onclick = async () => {
+        if (!confirm(`Обновить fb2cng до ${fbcLatestVersion || 'последней версии'}?`)) return;
+        fbcUpdateBtn.disabled = true; fbcCheckBtn.disabled = true; fbcUpdateProgress.style.display = 'block';
+        try {
+            const resp = await fetch('/update_fbc', { method:'POST' });
+            const data = await resp.json();
+            if (data.error) { showToast('Ошибка', data.error, 'danger'); resetFbcUpdateUI(); return; }
+            pollFbcUpdate(data.task_id);
+        } catch(e) {
+            showToast('Ошибка', e.message, 'danger'); resetFbcUpdateUI();
+        }
+    };
+
+    function pollFbcUpdate(taskId) {
+        const interval = setInterval(async () => {
+            try {
+                const resp = await fetch(`/status/${taskId}`);
+                const data = await resp.json();
+                if (data.status === 'SUCCESS') {
+                    clearInterval(interval);
+                    const result = data.result || {};
+                    if (result.updated) {
+                        fbcInstalledVersion.innerText = result.version;
+                        showToast('Успех', `fb2cng обновлён до ${result.version}`, 'success');
+                    } else {
+                        showToast('Готово', 'Уже установлена последняя версия', 'success');
+                    }
+                    fbcUpdateInfo.innerHTML = ''; fbcUpdateBtn.style.display = 'none';
+                    resetFbcUpdateUI();
+                } else if (data.status === 'FAILURE') {
+                    clearInterval(interval);
+                    showToast('Ошибка обновления', data.error || 'Неизвестная ошибка', 'danger');
+                    resetFbcUpdateUI();
+                }
+            } catch(e) { console.error(e); }
+        }, 2000);
+    }
 
     // --- Логи (с исправленной копировкой) ---
     async function loadLogs() {
