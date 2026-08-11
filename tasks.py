@@ -1,5 +1,6 @@
 import os
 import re
+import platform
 import subprocess
 import smtplib
 import yaml
@@ -8,9 +9,11 @@ import tempfile
 import shutil
 import time
 import logging
+import requests
 from email.message import EmailMessage
 from pathlib import Path
 from celery import Celery
+import auto_scan
 
 REDIS_URL = os.getenv('REDIS_URL', 'redis://localhost:6379/0')
 celery = Celery(__name__, broker=REDIS_URL, backend=REDIS_URL)
@@ -21,8 +24,14 @@ RESULT_FOLDER = BASE_DIR / 'results'
 CONFIG_FOLDER = BASE_DIR / 'configs'
 LOG_FILE = BASE_DIR / 'logs/converter.log'
 SMTP_CONFIG_FILE = CONFIG_FOLDER / 'smtp.yaml'
+SCAN_CONFIG_FILE = CONFIG_FOLDER / 'scan.yaml'
 
 FBC_CMD = os.getenv('FBC_PATH', 'fbc')
+FBC_BIN = Path(FBC_CMD)
+FBC_DIR = FBC_BIN.parent
+FBC_VERSION_FILE = FBC_DIR / 'VERSION'
+FB2CNG_REPO = 'rupor-github/fb2cng'
+RESULT_RETENTION_SECONDS = 24 * 3600  # хранить результаты ручной конвертации сутки
 
 for folder in [UPLOAD_FOLDER, RESULT_FOLDER, CONFIG_FOLDER, BASE_DIR / 'logs']:
     folder.mkdir(parents=True, exist_ok=True)
@@ -52,6 +61,12 @@ logger.addHandler(stream_handler)
 def load_smtp_config():
     if SMTP_CONFIG_FILE.exists():
         with open(SMTP_CONFIG_FILE, 'r') as f:
+            return yaml.safe_load(f) or {}
+    return {}
+
+def load_scan_config():
+    if SCAN_CONFIG_FILE.exists():
+        with open(SCAN_CONFIG_FILE, 'r') as f:
             return yaml.safe_load(f) or {}
     return {}
 
@@ -152,24 +167,29 @@ def fix_config_paths(config_path):
 
 def convert_single_fb2(fb2_path, output_format, fbc_config_path, output_dir):
     fixed_config = fix_config_paths(fbc_config_path)
-    cmd = [FBC_CMD, 'convert', '--to', output_format]
-    if fixed_config and Path(fixed_config).exists():
-        cmd.extend(['--config', fixed_config])
-    cmd.extend([str(fb2_path), str(output_dir)])
-    logger.info(f"Running: {' '.join(cmd)}")
-    proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
-    if proc.returncode != 0:
-        if fixed_config != fbc_config_path and fixed_config and Path(fixed_config).exists():
+    is_temp_config = bool(fixed_config) and fixed_config != fbc_config_path
+    try:
+        cmd = [FBC_CMD, 'convert', '--to', output_format]
+        if fixed_config and Path(fixed_config).exists():
+            cmd.extend(['--config', fixed_config])
+        cmd.extend([str(fb2_path), str(output_dir)])
+        logger.info(f"Running: {' '.join(cmd)}")
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        if proc.returncode != 0:
+            raise RuntimeError(f"fb2cng ошибка: {proc.stderr}")
+        ext_map = {'epub2':'epub','epub3':'epub','kepub':'epub','kfx':'kfx','azw8':'azw8'}
+        ext = ext_map.get(output_format, 'epub')
+        candidates = list(output_dir.glob(f'*.{ext}'))
+        if not candidates and output_format == 'kepub':
+            candidates = list(output_dir.glob('*.epub'))
+        if not candidates:
+            raise RuntimeError(f"Выходной файл .{ext} не найден")
+        return candidates[0]
+    finally:
+        # fix_config_paths() мог создать временный YAML в configs/ — раньше он
+        # удалялся только при ошибке fbc, и накапливался там при успехе.
+        if is_temp_config and Path(fixed_config).exists():
             Path(fixed_config).unlink()
-        raise RuntimeError(f"fb2cng ошибка: {proc.stderr}")
-    ext_map = {'epub2':'epub','epub3':'epub','kepub':'epub','kfx':'kfx','azw8':'azw8'}
-    ext = ext_map.get(output_format, 'epub')
-    candidates = list(output_dir.glob(f'*.{ext}'))
-    if not candidates and output_format == 'kepub':
-        candidates = list(output_dir.glob('*.epub'))
-    if not candidates:
-        raise RuntimeError(f"Выходной файл .{ext} не найден")
-    return candidates[0]
 
 def convert_single_file(input_path, output_format, send_email, fbc_config_path=None, output_dir=None):
     input_path = Path(input_path)
@@ -234,7 +254,7 @@ def convert_single_file(input_path, output_format, send_email, fbc_config_path=N
 def convert_book(self, task_id, input_path, output_format, send_email, fbc_config_path=None):
     input_path = Path(input_path)
     if not input_path.exists():
-        return {'error': f'Файл не найден: {input_path}'}
+        raise FileNotFoundError(f"Файл не найден: {input_path}")
     try:
         logger.info(f"Получена задача {task_id}: {input_path.name}")
         result_files = convert_single_file(input_path, output_format, send_email, fbc_config_path, output_dir=RESULT_FOLDER)
@@ -247,6 +267,116 @@ def convert_book(self, task_id, input_path, output_format, send_email, fbc_confi
             'email_sent': send_email,
             'format': output_format
         }
-    except Exception as e:
+    except Exception:
+        # Раньше исключение гасилось и возвращалось как {'error': ...} — Celery
+        # считал задачу SUCCESS, а фронтенд рисовал "Готово!" без ссылки на
+        # скачивание. Теперь ошибка всплывает по-настоящему: task.failed()
+        # срабатывает, и /status/<task_id> отдаёт её в поле error.
         logger.exception(f"Задача {task_id} завершилась ошибкой")
-        return {'error': str(e)}
+        raise
+
+
+@celery.task(bind=True)
+def scan_folder_task(self):
+    """Один шаг цепочки автоскана. Каждый вызов сам решает, продолжать ли:
+    читает scan.yaml, и если enabled=True — делает проход и планирует
+    следующий вызов через interval секунд. Так исключается прежняя проблема
+    привязки состояния к конкретному процессу gunicorn: единственный источник
+    истины — файл на общем volume, а не Python-переменная в памяти."""
+    config = load_scan_config()
+    if not config.get('enabled'):
+        logger.info("Автоскан: выключен, цепочка остановлена")
+        return {'running': False}
+    try:
+        count = auto_scan.scan_once(config)
+        if count:
+            logger.info(f"Автоскан: за проход обработано файлов: {count}")
+    except Exception:
+        logger.exception("Автоскан: ошибка прохода, цепочка продолжится по расписанию")
+    interval = max(1, int(config.get('interval', 5)))
+    scan_folder_task.apply_async(countdown=interval)
+    return {'running': True}
+
+
+def _detect_fbc_arch():
+    machine = platform.machine().lower()
+    if machine in ('x86_64', 'amd64'):
+        return 'amd64'
+    if machine in ('aarch64', 'arm64'):
+        return 'arm64'
+    raise RuntimeError(f"Неизвестная архитектура сервера: {machine}")
+
+
+def get_installed_fbc_version():
+    if FBC_VERSION_FILE.exists():
+        return FBC_VERSION_FILE.read_text().strip()
+    return None
+
+
+def get_latest_fbc_release():
+    """Метаданные последнего релиза fb2cng с GitHub (используется и роутом
+    проверки версии, и самой задачей обновления)."""
+    resp = requests.get(f"https://api.github.com/repos/{FB2CNG_REPO}/releases/latest", timeout=30)
+    resp.raise_for_status()
+    return resp.json()
+
+
+@celery.task(bind=True)
+def update_fbc(self):
+    """Скачивает последнюю версию fb2cng с GitHub и подменяет бинарник на
+    общем volume. Замена атомарная (staged-файл + rename), поэтому уже
+    запущенные в этот момент конвертации со старым бинарником не пострадают —
+    новую версию подхватят только следующие запуски subprocess."""
+    arch = _detect_fbc_arch()
+    release = get_latest_fbc_release()
+    tag = release.get('tag_name')
+    if not tag:
+        raise RuntimeError("GitHub не вернул tag_name последнего релиза")
+
+    asset_name = f"fbc-linux-{arch}.zip"
+    asset = next((a for a in release.get('assets', []) if a.get('name') == asset_name), None)
+    if not asset:
+        raise RuntimeError(f"В релизе {tag} не найден файл {asset_name}")
+
+    current_version = get_installed_fbc_version()
+    if current_version == tag:
+        logger.info(f"fb2cng уже последней версии: {tag}")
+        return {'updated': False, 'version': tag, 'previous_version': current_version}
+
+    logger.info(f"Обновление fb2cng: {current_version or '?'} -> {tag} ({asset_name})")
+    FBC_DIR.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as tmpdir:
+        tmp_zip = Path(tmpdir) / asset_name
+        with requests.get(asset['browser_download_url'], stream=True, timeout=180) as r:
+            r.raise_for_status()
+            with open(tmp_zip, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=1 << 20):
+                    if chunk:
+                        f.write(chunk)
+
+        extract_dir = Path(tmpdir) / 'extract'
+        extract_dir.mkdir()
+        with zipfile.ZipFile(tmp_zip, 'r') as zf:
+            zf.extractall(extract_dir)
+
+        new_binary = extract_dir / 'fbc'
+        if not new_binary.exists():
+            found = list(extract_dir.rglob('fbc'))
+            if not found:
+                raise RuntimeError("В скачанном архиве не найден исполняемый файл fbc")
+            new_binary = found[0]
+        new_binary.chmod(0o755)
+
+        check = subprocess.run([str(new_binary), '--version'], capture_output=True, text=True, timeout=30)
+        if check.returncode != 0:
+            raise RuntimeError(f"Скачанный fbc не запускается: {check.stderr.strip() or check.stdout.strip()}")
+        logger.info(f"Проверка новой версии: {check.stdout.strip()}")
+
+        staged = FBC_DIR / '.fbc.new'
+        shutil.copy(str(new_binary), str(staged))
+        staged.chmod(0o755)
+        staged.replace(FBC_BIN)  # атомарный rename на том же ФС
+
+    FBC_VERSION_FILE.write_text(tag)
+    logger.info(f"fb2cng обновлён: {current_version or '?'} -> {tag}")
+    return {'updated': True, 'version': tag, 'previous_version': current_version}

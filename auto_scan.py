@@ -1,88 +1,85 @@
-import os
-import time
-import threading
 import logging
 import shutil
 from pathlib import Path
-from tasks import convert_single_file
 
 logger = logging.getLogger(__name__)
 
-scan_thread = None
-stop_scan_event = threading.Event()
-last_processed = set()
 
 def get_paths():
     base = Path('/app/data')
     return {
         'in': base / 'auto_in',
         'processed': base / 'auto_processed',
-        'results': base / 'auto_results'
+        'results': base / 'auto_results',
+        'failed': base / 'auto_failed',
     }
 
-def scan_and_process(config):
+
+def scan_once(config):
+    """Один проход по папке auto_in. Обрабатывает все новые файлы и возвращает
+    их количество. Не хранит никакого состояния между вызовами: файл либо
+    остаётся в auto_in (значит, ещё не увиден), либо уезжает в auto_processed
+    (успех), либо в auto_failed (ошибка) — так что на следующий проход просто
+    заново смотрим, что лежит в auto_in, без отдельного списка "уже видели"."""
+    # Локальный импорт, чтобы избежать циклического импорта с tasks.py (там, в
+    # свою очередь, импортируется этот модуль для планирования задачи скана).
+    from tasks import convert_single_file
+
     paths = get_paths()
     in_folder = paths['in']
     processed_folder = paths['processed']
     results_folder = paths['results']
+    failed_folder = paths['failed']
 
-    for p in [in_folder, processed_folder, results_folder]:
-        if not p.exists():
-            p.mkdir(parents=True, exist_ok=True)
-            logger.info(f"Created folder: {p}")
+    for p in (in_folder, processed_folder, results_folder, failed_folder):
+        p.mkdir(parents=True, exist_ok=True)
 
-    interval = config.get('interval', 5)
     fmt = config['format']
     send_email = config['send_email']
     fbc_config_path = config.get('fbc_config_path')
 
-    while not stop_scan_event.is_set():
+    processed_count = 0
+    try:
+        files = sorted(f for f in in_folder.glob('*') if f.is_file())
+    except Exception:
+        logger.exception("Автоскан: не удалось прочитать auto_in")
+        return 0
+
+    for file_path in files:
+        if file_path.suffix.lower() not in ('.fb2', '.zip'):
+            continue
+        logger.info(f"Автоскан нашёл: {file_path.name}")
         try:
-            files = list(in_folder.glob('*'))
-            for file_path in files:
-                if file_path.is_dir():
-                    continue
-                if file_path.suffix.lower() not in ('.fb2', '.zip'):
-                    continue
-                if str(file_path) in last_processed:
-                    continue
-                last_processed.add(str(file_path))
-                logger.info(f"Auto-scan found: {file_path}")
+            result_files = convert_single_file(
+                file_path, fmt, send_email, fbc_config_path, output_dir=results_folder
+            )
+            if result_files:
+                shutil.move(str(file_path), str(processed_folder / file_path.name))
+                logger.info(f"Автоскан обработал: {file_path.name} -> {results_folder}")
+                processed_count += 1
+            else:
+                shutil.move(str(file_path), str(failed_folder / file_path.name))
+                logger.error(f"Автоскан: конвертация не дала файлов, перемещено в auto_failed: {file_path.name}")
+        except Exception:
+            logger.exception(f"Автоскан: ошибка при обработке {file_path.name}")
+            try:
+                shutil.move(str(file_path), str(failed_folder / file_path.name))
+            except Exception:
+                logger.exception(f"Автоскан: не удалось переместить {file_path.name} в auto_failed")
+    return processed_count
 
-                try:
-                    result_files = convert_single_file(
-                        file_path, fmt, send_email, fbc_config_path, output_dir=results_folder
-                    )
-                    if result_files:
-                        dest_path = processed_folder / file_path.name
-                        shutil.move(str(file_path), str(dest_path))
-                        logger.info(f"Moved original to {dest_path}")
-                        logger.info(f"Auto processed: {file_path.name}, results saved to {results_folder}")
-                    else:
-                        logger.error(f"Auto conversion failed for {file_path.name}")
-                except Exception as e:
-                    logger.exception(f"Error processing {file_path}")
-        except Exception as e:
-            logger.exception("Auto-scan error")
-        for _ in range(interval):
-            if stop_scan_event.is_set():
-                break
-            time.sleep(1)
 
-def start_scan(config):
-    global scan_thread, stop_scan_event
-    if scan_thread and scan_thread.is_alive():
-        stop_scan_event.set()
-        scan_thread.join()
-    stop_scan_event.clear()
-    scan_thread = threading.Thread(target=scan_and_process, args=(config,), daemon=True)
-    scan_thread.start()
-    logger.info("Auto-scan thread started")
+def enable_scan():
+    """Планирует первый проход цепочки задач автоскана. Вызывать только при
+    переходе выключено -> включено — иначе получим несколько параллельных
+    цепочек (см. проверку was_enabled в app.py /scan_settings)."""
+    from tasks import scan_folder_task
+    scan_folder_task.delay()
+    logger.info("Автоскан: запланирован первый проход")
 
-def stop_scan():
-    global scan_thread, stop_scan_event
-    stop_scan_event.set()
-    if scan_thread:
-        scan_thread.join()
-        scan_thread = None
-    logger.info("Auto-scan thread stopped")
+
+def disable_scan():
+    """Явных действий не требует: каждый проход сам читает scan.yaml и не
+    планирует следующий, если enabled=False. Функция оставлена для
+    симметрии с enable_scan() и для записи в лог."""
+    logger.info("Автоскан: выключение запрошено, цепочка остановится в течение одного интервала")
