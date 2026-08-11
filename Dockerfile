@@ -10,7 +10,7 @@ ARG TARGETARCH
 # Версия fb2cng, "прошиваемая" в образ по умолчанию. Дальше её можно обновлять
 # прямо из интерфейса (кнопка "Обновить" в настройках) без пересборки образа —
 # см. update_fbc в tasks.py. Этот ARG нужен только для первого запуска / отката.
-ARG FBC_VERSION=v1.5.5
+ARG FBC_VERSION=v1.5.7
 RUN case ${TARGETARCH} in \
       arm64) ARCH=arm64 ;; \
       amd64) ARCH=amd64 ;; \
