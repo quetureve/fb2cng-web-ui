@@ -47,6 +47,9 @@
                                 <option value="kepub">KEPUB</option>
                                 <option value="kfx">KFX</option>
                                 <option value="azw8">AZW8</option>
+                                <option value="pdf">PDF</option>
+                                <option value="txt">TXT</option>
+                                <option value="md">Markdown</option>
                             </select>
                         </div>
                         <div class="form-check mb-2">
@@ -176,6 +179,9 @@
                                                     <option value="kepub" {% if scan_cfg.format == 'kepub' %}selected{% endif %}>KEPUB</option>
                                                     <option value="kfx" {% if scan_cfg.format == 'kfx' %}selected{% endif %}>KFX</option>
                                                     <option value="azw8" {% if scan_cfg.format == 'azw8' %}selected{% endif %}>AZW8</option>
+                                                    <option value="pdf" {% if scan_cfg.format == 'pdf' %}selected{% endif %}>PDF</option>
+                                                    <option value="txt" {% if scan_cfg.format == 'txt' %}selected{% endif %}>TXT</option>
+                                                    <option value="md" {% if scan_cfg.format == 'md' %}selected{% endif %}>Markdown</option>
                                                 </select>
                                             </div>
                                             <div class="form-check mb-2">
