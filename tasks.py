@@ -177,7 +177,7 @@ def convert_single_fb2(fb2_path, output_format, fbc_config_path, output_dir):
         proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         if proc.returncode != 0:
             raise RuntimeError(f"fb2cng ошибка: {proc.stderr}")
-        ext_map = {'epub2':'epub','epub3':'epub','kepub':'epub','kfx':'kfx','azw8':'azw8'}
+        ext_map = {'epub2':'epub','epub3':'epub','kepub':'epub','kfx':'kfx','azw8':'azw8','pdf':'pdf','txt':'txt','md':'md'}
         ext = ext_map.get(output_format, 'epub')
         candidates = list(output_dir.glob(f'*.{ext}'))
         if not candidates and output_format == 'kepub':

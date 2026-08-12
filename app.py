@@ -3,11 +3,13 @@ import time
 import uuid
 import yaml
 import io
+import subprocess
+import tempfile
 from pathlib import Path
 from werkzeug.utils import secure_filename
 from flask import Flask, request, jsonify, render_template, send_file
 from celery.result import AsyncResult
-from tasks import convert_book, update_fbc, get_installed_fbc_version, get_latest_fbc_release
+from tasks import convert_book, update_fbc, get_installed_fbc_version, get_latest_fbc_release, FBC_CMD, logger
 import auto_scan
 
 app = Flask(__name__)
@@ -273,10 +275,25 @@ def get_logs():
 
 @app.route('/download_example_config')
 def download_example_config():
-    example_path = Path('fbc_config.yaml')
-    if example_path.exists():
-        return send_file(example_path, as_attachment=True, download_name='fb2cng_config.yaml')
-    else:
+    # Раньше тут отдавался статический fbc_config.yaml из репозитория. Проблема:
+    # после обновления fb2cng через кнопку в настройках (или просто в новом
+    # релизе этого проекта) названия полей могли разойтись с реально
+    # установленной версией — именно это уже случалось между v1.3.8 и v1.5.5.
+    # Теперь конфиг генерирует сам установленный бинарник, так что он всегда
+    # соответствует тому, что реально запущено.
+    try:
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_path = Path(tmpdir) / 'fb2cng_config.yaml'
+            proc = subprocess.run(
+                [FBC_CMD, 'dumpconfig', '--default', str(out_path)],
+                capture_output=True, text=True, timeout=30
+            )
+            if proc.returncode != 0 or not out_path.exists():
+                raise RuntimeError(proc.stderr.strip() or 'fbc dumpconfig завершился с ошибкой')
+            data = out_path.read_bytes()
+        return send_file(io.BytesIO(data), as_attachment=True, download_name='fb2cng_config.yaml', mimetype='text/yaml')
+    except Exception as e:
+        logger.warning(f"Не удалось сгенерировать конфиг через 'fbc dumpconfig --default': {e}. Отдаю базовый пример.")
         sample = """version: 1
 document:
   output_name_template: "{{ .Title }} - {{ range .Authors }}{{ .LastName }} {{ .FirstName }}{{ end }}"
@@ -284,7 +301,6 @@ document:
     title_template: "{{ .Title }}"
     creator_name_template: "{{ .LastName }} {{ .FirstName }}"
   # stylesheet_path: "mystyle.css"
-  # cover_image: "cover.jpg"
   images:
     optimize: true
     jpeg_quality_level: 80
